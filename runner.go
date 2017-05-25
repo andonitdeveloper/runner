@@ -7,13 +7,101 @@ import (
 	"time"
 	"os/signal"
 	"syscall"
+	"flag"
+	"gopkg.in/yaml.v2"
+	"io/ioutil"
+	"strings"
 )
 
+const(
+	PREDEV = "predev"
+	DEV = "dev"
+	INT = "int"
+	STG = "stg"
+	PROD = "prod"
+)
 
 var logger *log.Logger
+var env *string
+var configfile *string
+var mutex = &sync.Mutex{}
+var config []byte
+var settings map[string]interface{}
+
 
 func init(){
 	logger = log.New()
+	env = flag.String("env", "predev", "运行环境参数")
+	configfile = flag.String("config", "", "配置文件路径")
+	flag.Parse()
+	*env = strings.ToLower(*env)
+
+	if *env!= PREDEV && *env != DEV && *env != INT && *env != STG && *env != PROD{
+		panic("运行环境参数错误: " + *env)
+	}
+
+	if len(*configfile) == 0{
+		*configfile = "application"
+		if *env != PREDEV {
+			*configfile = *configfile + "-" + *env
+		}
+
+		*configfile = *configfile + ".yaml"
+	}
+}
+
+func Settings() map[string]interface{}{
+	mutex.Lock()
+	defer mutex.Unlock()
+
+	if config == nil{
+		loadConfig()
+	}
+
+	settings := map[string]interface{}{}
+	err := yaml.Unmarshal(config, &settings)
+	if err != nil{
+		panic("配置文件不是有效的YAML格式文件")
+	}
+
+	return settings
+
+}
+func SettingsS(out interface{}){
+	mutex.Lock()
+	defer mutex.Unlock()
+
+	if config == nil{
+		loadConfig()
+	}
+
+	err := yaml.Unmarshal(config, out)
+	if err != nil{
+		panic("配置文件不是有效的YAML格式文件")
+	}
+}
+
+func loadConfig(){
+	if exist(*configfile){
+		b, err := ioutil.ReadFile(*configfile)
+		config = b
+		if err != nil{
+			panic(err)
+		}
+
+	}else{
+		logger.Warnf("找不到配置文件：%s", *configfile)
+
+		config = []byte{}
+	}
+}
+
+func exist(filename string) (bool){
+	if _, err := os.Stat(filename); os.IsNotExist(err){
+		return false;
+	}
+
+	return true;
 }
 
 
